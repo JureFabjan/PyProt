@@ -7,7 +7,7 @@ import Bio.SubsMat.MatrixInfo as MatrixInfo
 import Bio.Seq
 
 
-def align(seq1, seq2, breaks):
+def align(seq1, seq2, seq1_name, seq2_name, breaks):
     """
     Aligns the sequences and creates the chain brakes at the appropriate places.
     The flanking extra amino acids of seq2 are also removed.
@@ -32,12 +32,14 @@ def align(seq1, seq2, breaks):
     if seq1.endswith(break_sequences[-1]):
         break_sequences = break_sequences[:-1]
 
-    # Aligning the sequences
-    seq1_out, seq2_out, *_ = pairwise2.align.globalds(Bio.Seq.Seq(seq1,
-                                                                  alphabet=Bio.Seq.Alphabet.ProteinAlphabet).ungap("-"),
-                                                      Bio.Seq.Seq(seq2,
-                                                                  alphabet=Bio.Seq.Alphabet.ProteinAlphabet).ungap("-"),
-                                                      MatrixInfo.blosum62, -10, -0.5, one_alignment_only=True)[0]
+    # Getting the aligned sequences
+    seq1_out = str([x for x in sequences if (seq1_name in x.name and seq2_name[0].lower() == x.name[-2])][0].seq)
+    seq2_out = str([x for x in sequences if seq2_name in x.name][0].seq)
+    # Removing gaps present in both sequences
+    gaps = [i for i, (s1, s2) in enumerate(zip(seq1_out, seq2_out)) if s1 == s2 == "-"]
+    for gap in gaps[::-1]:
+        seq1_out = seq1_out[:gap] + seq1_out[gap+1:]
+        seq2_out = seq2_out[:gap] + seq2_out[gap+1:]
 
     # Inserting "/" as a chain break sign at the end of the break blocks (this is why the chains
     # are operated on in the reversed state.
@@ -134,6 +136,8 @@ if __name__ == "__main__":
         target_subunit = [x for x in target if data["name"].split("-")[0] in x][0]
         chain_reference[chain]["sequence"], target_ali = align(data["sequence"],
                                                                [str(x.seq) for x in sequences if x.name == target_subunit][0],
+                                                               f"{used_structure_name.upper()}",
+                                                               target_subunit,
                                                                data["gaps"])
         target_reference[chain] = {"name": target_subunit,
                                    "sequence": target_ali}
