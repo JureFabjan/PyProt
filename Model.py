@@ -5,6 +5,27 @@ import Bio.PDB.Polypeptide as Polypeptide
 import Bio.pairwise2 as pairwise2
 import Bio.SubsMat.MatrixInfo as MatrixInfo
 import Bio.Seq
+import Bio.PDB as PDB
+
+
+class _Select(PDB.Select):
+    """
+    Class to overwrite the selection class in Bio.PDB. Used for selecting the included chains
+    during the cleaning of the modeller input structure.
+    """
+    def __init__(self, selected_chains):
+        super(_Select, self).__init__()
+        self.chains = selected_chains
+
+    def accept_chain(self, chain):
+        """
+        Overwritten method for returning the selection.
+        :param chain: Chain to be checked.
+        :return: True if chain is in the selected list, else False
+        """
+        if chain in self.chains:
+            return True
+        return False
 
 
 def align(seq1, seq2, seq1_name, seq2_name, breaks):
@@ -154,6 +175,13 @@ if __name__ == "__main__":
     # SEQ
     # *
     pir_write([chain_reference, target_reference], f"{structure_loc}{target_name}.pir")
+
+    # Structure cleaning - removal of unused chains (extra molecules etc.)
+    # coupled with structure saving
+    io = PDB.PDBIO()
+    io.set_structure(structure)
+    selected_chains = _Select([x for x in structure[0].get_list() if x.id in chain_reference.keys()])
+    io.save(f"{structure_loc}{used_structure_name}_cleaned.pdb", selected_chains)
 
     # modeller.log.verbose()
     # environment = modeller.environ()
