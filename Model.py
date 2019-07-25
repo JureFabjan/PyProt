@@ -116,9 +116,6 @@ class Input:
         self.input_ali_loc = f"{self.input_loc}/{self.target_name}.ali"
         self.ali_write()
 
-        # self.input_pir_loc = f"{self.input_loc}/{self.target_name}.pir"
-        # self.pir_write()
-
     def chains_extract(self):
         """
         Extracts the chain information (name, gaps and sequence) from the structure.
@@ -227,32 +224,6 @@ class Input:
             seq1_out, seq2_out = seq1_out[:-1], seq2_out[:-1]
 
         return seq1_out[::-1], seq2_out[::-1]
-
-    def pir_write(self):
-        """
-        Writes the PIR file, needed as an input to the modeller.
-        Style:
-        >P1;name
-        structure/sequence:name:beginning_residue:beginning_chain:ending_residue:ending_chain:name:::
-        SEQ
-        *
-        :return: None
-        """
-        # Sorted for possible better viewing of the generated file by humans
-        out = []
-        for chain in self.chains_ordered:
-            out.append("\n".join([f">P1;{self.structure_name}",
-                                  f"structure:{self.structure_name}:{self.structure_chains[chain]['start']}:{chain}:{self.structure_chains[chain]['end']}:{chain}:{self.structure_name}:::",
-                                  *[self.structure_chains[chain]["sequence"][i:i+50] for i in range(0, len(self.structure_chains[chain]["sequence"]), 50)],
-                                  "*"]))
-
-            out.append("\n".join([f">P1;{self.target_name}",
-                                  f"sequence:{self.target_name}:1:{chain}::{chain}:{self.target_name}:::",
-                                  *[self.target_chains[chain]["sequence"][i:i+50] for i in range(0, len(self.target_chains[chain]["sequence"]), 50)],
-                                  "*"]))
-
-        with open(self.input_pir_loc, "w") as file:
-            file.write("\n".join(out))
 
     def ali_write(self):
         """
