@@ -65,12 +65,12 @@ class _Select(PDB.Select):
 
 
 class Input:
-    def __init__(self, structure_loc, target, structure_name="", target_name="X", master_ali=""):
+    def __init__(self, structure_loc, target_map, structure_name="", target_name="X", master_ali=""):
         """
         Builds the input files correctly for running a model.
         :param structure_loc: Location of the template structure.
-        :param target: Tuple of used subunits; currently they will be mapped to their corresponding
-        subunit class
+        :param target_map: Tuple of used subunits; format:
+        [(template_sub, target_sub), (template_sub2, target_sub2)...]
         :param structure_name: Optional name for the template structure
         (else a name is generated from structure_loc)
         :param target_name: Optional name for the target structure (else it is substituted with X)
@@ -82,7 +82,7 @@ class Input:
             self.structure_name = structure_name
         else:
             self.structure_name = ".".join(structure_loc.split("/")[-1].split(".")[:-1])
-        self.target = target
+        self.target = target_map
         self.target_name = target_name
 
         self.structure = PDBParser(PERMISSIVE=True).get_structure(self.structure_name,
@@ -154,8 +154,22 @@ class Input:
         Building/preparing the target sequence chains.
         :return: None
         """
-        for chain, data in self.structure_chains.items():
-            target_subunit = [x for x in self.target if data["name"].split("-")[0] in x][0]
+        # Transforming the mapping of the input to the mapping in the template file
+        input_mapping = [x[0] for x in self.target]
+        input_mapping_target = [x[1] for x in self.target]
+        template = [self.structure_chains[chain]["name"] for chain in self.chains_ordered]
+        normal_orientation = [template] + [template[i:]+template[:i] for i in range(1, len(template))]
+        # Checking the orientation of the input
+        if input_mapping not in normal_orientation:
+            input_mapping = input_mapping[::-1]
+            input_mapping_target = input_mapping_target[::-1]
+        # Checking the phase of the input
+        while input_mapping != template:
+            input_mapping = input_mapping[1:] + input_mapping[:1]
+            input_mapping_target = input_mapping_target[1:] + input_mapping_target[:1]
+
+        for target_subunit, chain in zip(input_mapping_target, self.chains_ordered):
+            data = self.structure_chains[chain]
             self.structure_chains[chain]["sequence"], target_ali = self.align(data["sequence"],
                                                                               f"{self.structure_name.upper()}",
                                                                               target_subunit,
@@ -334,8 +348,12 @@ if __name__ == "__main__":
     structure_loc = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/Structures"
     used_structure_name = "6a96"
     used_structure_loc = f"{structure_loc}{used_structure_name}.pdb"
-    target = ("Alpha-6", "Beta-3")
     target_name = "a6b3"
+    target = [("Alpha-5", "Alpha-6"),
+              ("Beta-3", "Beta-3"),
+              ("Beta-3", "Beta-3"),
+              ("Beta-3", "Beta-3"),
+              ("Beta-3", "Beta-3")]
 
     model_input = Input(structure_loc,
                         target,
