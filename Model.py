@@ -10,7 +10,13 @@ import Bio.pairwise2 as pairwise2
 import modeller
 import modeller.automodel as automodel
 
-modeller.log.verbose()
+_verbose = False
+
+
+def verbose():
+    global _verbose
+    _verbose = True
+    modeller.log.verbose()
 
 
 class _Select(PDB.Select):
@@ -70,27 +76,19 @@ class Input:
         :param target_name: Optional name for the target structure (else it is substituted with X)
         :param master_ali: Location of the MasterAli.pir file.
         """
-        self.master_ali = master_ali
         self.structure_loc = structure_loc
+        self.input_loc = f"{self.structure_loc}/Model"
         if structure_name:
             self.structure_name = structure_name
         else:
             self.structure_name = ".".join(structure_loc.split("/")[-1].split(".")[:-1])
         self.target = target
         self.target_name = target_name
-        self.input_loc = f"{self.structure_loc}/Model"
 
         self.structure = PDBParser(PERMISSIVE=True).get_structure(self.structure_name,
                                                                   f"{self.structure_loc}/{self.structure_name}.pdb")
-        self.compounds = self.structure.header["compound"]
 
-        self.sequences = AlignIO.read(self.master_ali, "pir")
-        self.sequences_names = [x.name for x in self.sequences]
-
-        # Extraction of the chain names
-        self.chain_names = [(compound["molecule"].split(",")[0].split(" ")[-1].capitalize(),
-                             [chain.capitalize() for chain in compound["chain"].split(", ")]) for compound in
-                            self.compounds.values() if "gamma" in compound["molecule"]]
+        self.sequences = AlignIO.read(master_ali, "pir")
 
         # Extraction of information about chains
         self.structure_chains = {}
@@ -127,23 +125,29 @@ class Input:
         :return:
         """
         builder = Polypeptide.CaPPBuilder()
-        for sub_name, chains in self.chain_names:
-            for chain in chains:
-                asequence = builder.build_peptides(self.structure[0][chain])
-                asequence = asequence[0].get_sequence()
-                ref_seq = self.sequences[self.sequences_names.index(sub_name)]
-                alignment = pairwise2.align.globalds(asequence.ungap("-"),
-                                                     ref_seq.seq.ungap("-"),
-                                                     MatrixInfo.blosum62, -10, -0.5,
-                                                     one_alignment_only=True)
-                self.structure_chains[chain] = {"name": sub_name,
-                                                "gaps": [i for i, aa in enumerate(alignment[0][1]) if aa == "-"],
-                                                "sequence": alignment[0][0]}
+        chain_names = []
+        for compound in self.structure.header["compound"].values():
+            if "gamma" in compound["molecule"]:
+                name = compound["molecule"].split(",")[0].split(" ")[-1].capitalize()
+                chain_names += [(chain, name) for chain in compound["chain"].upper().split(", ")]
 
-                self.structure_chains_reference[chain] = {"name": sub_name,
-                                                          "gaps": [i for i,
-                                                                         aa in enumerate(alignment[0][1]) if aa == "-"],
-                                                          "sequence": alignment[0][0]}
+        for chain, sub_name in chain_names:
+            asequence = builder.build_peptides(self.structure[0][chain])
+            asequence = asequence[0].get_sequence()
+
+            ref_seq = [seq for seq in self.sequences if sub_name in seq.name][0]
+            alignment = pairwise2.align.globalds(asequence.ungap("-"),
+                                                 ref_seq.seq.ungap("-"),
+                                                 MatrixInfo.blosum62, -10, -0.5,
+                                                 one_alignment_only=True)
+            self.structure_chains[chain] = {"name": sub_name,
+                                            "gaps": [i for i, aa in enumerate(alignment[0][1]) if aa == "-"],
+                                            "sequence": alignment[0][0]}
+
+            self.structure_chains_reference[chain] = {"name": sub_name,
+                                                      "gaps": [i for i,
+                                                                     aa in enumerate(alignment[0][1]) if aa == "-"],
+                                                      "sequence": alignment[0][0]}
 
     def chains_build(self):
         """
