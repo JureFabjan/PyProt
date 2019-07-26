@@ -307,6 +307,35 @@ class Model:
 
         self.alignment.make()
 
+        # Rearranging and renaming of the chains
+        subchains_count = {ch: len(settings.target_chains[ch]["sequence"].split("/")) for ch in settings.chains_ordered}
+        self.created_files = [x for x in os.listdir() if x.startswith(settings.target_name) and x.endswith(".pdb")]
+        for file in self.created_files:
+            structure = PDBParser(PERMISSIVE=True).get_structure(settings.target_name, file)
+            chains = list(structure[0].get_chains())
+            # Rename all chains so they can be named correctly in the end
+            for i, chain in enumerate(chains):
+                chain.id = f"CHAIN{i}"
+            # Extend the chains with the initial AAs with AAs from the same subunits
+            i = 0
+            for chain in settings.chains_ordered:
+                base = chains[i]
+                base.id = chain
+                i += 1
+                for _ in range(subchains_count[chain]-1):
+                    for residue in chains[i]:
+                        base.add(residue)
+                    i += 1
+            # Remove extra chains
+            for chain in chains:
+                if chain.id.startswith("CHAIN"):
+                    del structure[0][chain.id]
+
+            # Save back into the file
+            io = PDB.PDBIO()
+            io.set_structure(structure)
+            io.save(file)
+
 
 if __name__ == "__main__":
     # Variables for the input
