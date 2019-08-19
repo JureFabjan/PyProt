@@ -331,6 +331,40 @@ class Model:
                 if chain.id.startswith("CHAIN"):
                     del structure[0][chain.id]
 
+            for chain in structure[0].get_chains():
+                sequence_target = settings.target_chains[chain]["sequence"]
+                sequence_template = settings.structure_chains[chain]["sequence"]
+                chain_target = list(structure[0][chain].get_residues())
+                chain_template = list(settings.structure[0][chain].get_residues())
+
+                # Chainging the numbering so to not introduce unwanted clashes in the assignment of the real numbers
+                for i, residue in enumerate(chain_target):
+                    residue.id = (" ", 10000+i, " ")
+
+                # Setting the initial number (number in the template + number of leading gaps)
+                i = settings.structure_chains[chain]["start"] + len(sequence_target) - len(sequence_target.lstrip("-"))
+                for residue, _ in zip(chain_target, sequence_target.split("/")[0]):
+                    residue.id = (" ", i, " ")
+                    i += 1
+
+                # Does not account for the gaps in the template for now! So those AAs will have a
+                # very high number.
+                i = 0
+                j = 0
+                for residue_target, residue_template in zip(sequence_target, sequence_template):
+                    if residue_target == "-":
+                        i += 1
+                        j += 1
+                    else:
+                        while SeqUtils.seq1(settings.structure[0][chain][i].get_resname()) != residue_template:
+                            i += 1
+                        while SeqUtils.seq1(structure[0][chain][j].get_resname()) != residue_target:
+                            j += 1
+                        structure[0][chain][j].id = (" ", settings.structure[0][chain][i].id[1], " ")
+
+
+
+
             # Save back into the file
             io = PDB.PDBIO()
             io.set_structure(structure)
