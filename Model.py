@@ -2,8 +2,6 @@ import os
 
 import Bio.AlignIO as AlignIO
 import Bio.PDB as PDB
-import Bio.PDB.PDBParser as PDBParser
-import Bio.PDB.Polypeptide as Polypeptide
 import Bio.SeqUtils as SeqUtils
 import Bio.SubsMat.MatrixInfo as MatrixInfo
 import Bio.pairwise2 as pairwise2
@@ -85,8 +83,8 @@ class Input:
         self.target = target_map
         self.target_name = target_name
 
-        self.structure = PDBParser(PERMISSIVE=True).get_structure(self.structure_name,
-                                                                  f"{self.structure_loc}/{self.structure_name}.pdb")
+        self.structure = PDB.PDBParser(PERMISSIVE=True).get_structure(self.structure_name,
+                                                                      f"{self.structure_loc}/{self.structure_name}.pdb")
 
         self.sequences = AlignIO.read(master_ali, "pir")
 
@@ -121,7 +119,7 @@ class Input:
         Extracts the chain information (name, gaps and sequence) from the structure.
         :return:
         """
-        builder = Polypeptide.CaPPBuilder()
+        builder = PDB.Polypeptide.CaPPBuilder()
         chain_names = []
         for compound in self.structure.header["compound"].values():
             if "gamma" in compound["molecule"]:
@@ -236,13 +234,21 @@ class Input:
         seq1_out = []
         seq2_out = []
         for chain in self.chains_ordered:
-            seq1_out.append("\n".join([self.structure_chains[chain]["sequence"][i:i+50] for i in range(0, len(self.structure_chains[chain]["sequence"]), 50)]))
-            seq2_out.append("\n".join([self.target_chains[chain]["sequence"][i:i+50] for i in range(0, len(self.target_chains[chain]["sequence"]), 50)]))
+            seq1_out.append("\n".join([self.structure_chains[chain]["sequence"][i:i+50] for
+                                       i in range(0, len(self.structure_chains[chain]["sequence"]), 50)]))
+            seq2_out.append("\n".join([self.target_chains[chain]["sequence"][i:i+50] for
+                                       i in range(0, len(self.target_chains[chain]["sequence"]), 50)]))
         seq1_out = "\n".join([i+"/" if len(i) % 50 != 0 else i+"\n/" for i in seq1_out])
         seq2_out = "\n".join([i+"/" if len(i) % 50 != 0 else i+"\n/" for i in seq2_out])
 
+        start = self.structure_chains[self.chains_ordered[0]]['start']
+        end = self.structure_chains[self.chains_ordered[-1]]['end']
         out = "\n".join([f">P1;{self.structure_name.upper()}",
-                         f"structure:{self.structure_name.upper()}:{self.structure_chains[self.chains_ordered[0]]['start']}:{self.chains_ordered[0]}:{self.structure_chains[self.chains_ordered[-1]]['end']}:{self.chains_ordered[-1]}:{self.structure_name.upper()}:::",
+                         "structure:{0}:{1}:{2}:{3}:{4}:{0}:::".format(self.structure_name.upper(),
+                                                                       start,
+                                                                       self.chains_ordered[0],
+                                                                       end,
+                                                                       self.chains_ordered[-1]),
                          seq1_out,
                          "*",
                          "",
@@ -297,10 +303,10 @@ class Model:
         os.chdir(settings.input_loc)
         self.env.io.atom_files_directory = ["./"]
 
-        self.alignment = automodel.automodel(self.env,
-                                             alnfile=settings.input_ali_loc.split("/")[-1],
-                                             knowns=settings.structure_name.upper(),
-                                             sequence=settings.target_name)
+        self.alignment = modeller.automodel.automodel(self.env,
+                                                      alnfile=settings.input_ali_loc.split("/")[-1],
+                                                      knowns=settings.structure_name.upper(),
+                                                      sequence=settings.target_name)
 
         self.alignment.starting_model = starting_model
         self.alignment.ending_model = ending_model
@@ -309,9 +315,9 @@ class Model:
 
         # Rearranging and renaming of the chains
         subchains_count = {ch: len(settings.target_chains[ch]["sequence"].split("/")) for ch in settings.chains_ordered}
-        self.created_files = [x for x in os.listdir() if x.startswith(settings.target_name) and x.endswith(".pdb")]
+        self.created_files = [x for x in os.listdir(".") if x.startswith(settings.target_name) and x.endswith(".pdb")]
         for file in self.created_files:
-            structure = PDBParser(PERMISSIVE=True).get_structure(settings.target_name, file)
+            structure = PDB.PDBParser(PERMISSIVE=True).get_structure(settings.target_name, file)
             chains = list(structure[0].get_chains())
             # Rename all chains so they can be named correctly in the end
             for i, chain in enumerate(chains):
@@ -340,7 +346,6 @@ class Model:
                 chain_template = list(settings.structure[0][chain.id].get_residues())
 
                 # Changing the numbering so to not introduce unwanted clashes in the assignment of the real numbers
-                i = len(sequence_target) - len(sequence_target.lstrip("-"))
                 j = 0
                 chain_target_dict = {}
                 for i, residue_target in enumerate(sequence_target):
@@ -373,20 +378,20 @@ if __name__ == "__main__":
     # >P1;name
     # sequence:model_name
     # AA SEQUENCE*
-    pir_input = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/MasterAli.pir"
-    structure_loc = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/Structures"
-    used_structure_name = "6a96"
-    used_structure_loc = f"{structure_loc}{used_structure_name}.pdb"
-    target_name = "a6b3"
-    target = [("Alpha-5", "Alpha-6"),
-              ("Beta-3", "Beta-3"),
-              ("Beta-3", "Beta-3"),
-              ("Beta-3", "Beta-3"),
-              ("Beta-3", "Beta-3")]
+    _pir_input = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/MasterAli.pir"
+    _structure_loc = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/Structures"
+    _used_structure_name = "6a96"
+    _used_structure_loc = f"{_structure_loc}{_used_structure_name}.pdb"
+    _target_name = "a6b3"
+    _target = [("Alpha-5", "Alpha-6"),
+               ("Beta-3", "Beta-3"),
+               ("Beta-3", "Beta-3"),
+               ("Beta-3", "Beta-3"),
+               ("Beta-3", "Beta-3")]
 
-    model_input = Input(structure_loc,
-                        target,
-                        used_structure_name,
-                        target_name, pir_input)
+    _model_input = Input(_structure_loc,
+                         _target,
+                         _used_structure_name,
+                         _target_name, _pir_input)
 
-    model = Model(model_input)
+    _model = Model(_model_input)
