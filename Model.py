@@ -83,8 +83,10 @@ class Input:
         self.target = target_map
         self.target_name = target_name
 
-        self.structure = PDB.PDBParser(PERMISSIVE=True).get_structure(self.structure_name,
-                                                                      f"{self.structure_loc}/{self.structure_name}.pdb")
+        self.structure = PDB.PDBParser(PERMISSIVE=True,
+                                       QUIET=not _verbose).get_structure(self.structure_name,
+                                                                         "{}/{}.pdb".format(self.structure_loc,
+                                                                                            self.structure_name))
 
         self.sequences = AlignIO.read(master_ali, "pir")
 
@@ -317,7 +319,9 @@ class Model:
         subchains_count = {ch: len(settings.target_chains[ch]["sequence"].split("/")) for ch in settings.chains_ordered}
         self.created_files = [x for x in os.listdir(".") if x.startswith(settings.target_name) and x.endswith(".pdb")]
         for file in self.created_files:
-            structure = PDB.PDBParser(PERMISSIVE=True).get_structure(settings.target_name, file)
+            structure = PDB.PDBParser(PERMISSIVE=True,
+                                      QUIET=not _verbose).get_structure(settings.target_name,
+                                                                        file)
             chains = list(structure[0].get_chains())
             # Rename all chains so they can be named correctly in the end
             for i, chain in enumerate(chains):
