@@ -1,4 +1,5 @@
 import os
+import pathlib
 
 import Bio.AlignIO as AlignIO
 import Bio.PDB as PDB
@@ -66,7 +67,7 @@ class Input:
     def __init__(self, structure_loc, target_map, structure_name="", target_name="X", master_ali=""):
         """
         Builds the input files correctly for running a model.
-        :param structure_loc: Location of the template structure.
+        :param structure_loc: Location of the template structure. If not a pathlib.Path, it gets converted to one.
         :param target_map: Tuple of used subunits; format:
         [(template_sub, target_sub), (template_sub2, target_sub2)...]
         :param structure_name: Optional name for the template structure
@@ -74,20 +75,25 @@ class Input:
         :param target_name: Optional name for the target structure (else it is substituted with X)
         :param master_ali: Location of the MasterAli.pir file.
         """
-        self.structure_loc = structure_loc
-        self.input_loc = f"{self.structure_loc}/Model"
+        self.structure_loc = pathlib.Path(structure_loc)
+        self.input_loc = self.structure_loc / "Model"
         if structure_name:
             self.structure_name = structure_name
         else:
-            self.structure_name = ".".join(structure_loc.split("/")[-1].split(".")[:-1])
+            self.structure_name = self.structure_loc.parts[-1]
         self.target = target_map
         self.target_name = target_name
 
-        self.structure = PDB.PDBParser(PERMISSIVE=True,
-                                       QUIET=not _verbose).get_structure(self.structure_name,
-                                                                         "{}/{}.pdb".format(self.structure_loc,
-                                                                                            self.structure_name))
-
+        # Checking if the structure location points to the folder or the file itself
+        if self.structure_loc.is_file():
+            self.structure = PDB.PDBParser(PERMISSIVE=True,
+                                           QUIET=not _verbose).get_structure(self.structure_name,
+                                                                             self.structure_loc)
+        else:
+            structure = self.structure_loc / f"{self.structure_name}.pdb"
+            self.structure = PDB.PDBParser(PERMISSIVE=True,
+                                           QUIET=not _verbose).get_structure(self.structure_name,
+                                                                             structure)
         self.sequences = AlignIO.read(master_ali, "pir")
 
         # Extraction of information about chains
@@ -382,10 +388,10 @@ if __name__ == "__main__":
     # >P1;name
     # sequence:model_name
     # AA SEQUENCE*
-    _pir_input = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/MasterAli.pir"
-    _structure_loc = "C:/Users/Jure/Documents/Jure files/GitHub/ligand_dock_project/Structures"
+    _pir_input = pathlib.Path(".") / "MasterAli.pir"
+    _structure_loc = pathlib.Path(".") / "Structures"
     _used_structure_name = "6a96"
-    _used_structure_loc = f"{_structure_loc}{_used_structure_name}.pdb"
+    _used_structure_loc = _structure_loc / f"{_used_structure_name}.pdb"
     _target_name = "a6b3"
     _target = [("Alpha-5", "Alpha-6"),
                ("Beta-3", "Beta-3"),
