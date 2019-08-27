@@ -110,7 +110,7 @@ class Input:
 
         # Cleaning and preparing the PDB of the template
         # Getting the start and end AA number in the cleaned template structure
-        self.input_pdb_loc = f"{self.input_loc}/{self.structure_name.upper()}.pdb"
+        self.input_pdb_loc = self.input_loc / f"{self.structure_name.upper()}.pdb"
         self.pdb_clean()
 
         # Writing of the PIR/ALI file
@@ -119,7 +119,7 @@ class Input:
         except FileExistsError:
             pass
 
-        self.input_ali_loc = f"{self.input_loc}/{self.target_name}.ali"
+        self.input_ali_loc = self.input_loc / f"{self.target_name}.ali"
         self.ali_write()
 
     def chains_extract(self):
@@ -292,7 +292,7 @@ class Input:
             residues[chain] = sequence
         selected.extend(accepted_res, "r")
 
-        io.save(self.input_pdb_loc, selected)
+        io.save(str(self.input_pdb_loc.absolute()), selected)
 
         # Adding the beginning and ending AAs to the list
         for chain in self.structure_chains.keys():
@@ -308,11 +308,15 @@ class Model:
         """
         self.env = modeller.environ()
 
-        os.chdir(settings.input_loc)
+        # Changing the working directory
+        if settings.input_loc.is_file():
+            os.chdir(settings.input_loc.parent)
+        else:
+            os.chdir(settings.input_loc)
         self.env.io.atom_files_directory = ["./"]
 
         self.alignment = modeller.automodel.automodel(self.env,
-                                                      alnfile=settings.input_ali_loc.split("/")[-1],
+                                                      alnfile=settings.input_ali_loc.parts[-1],
                                                       knowns=settings.structure_name.upper(),
                                                       sequence=settings.target_name)
 
