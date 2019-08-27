@@ -108,17 +108,18 @@ class Input:
         self.target_chains = {}
         self.chains_build()
 
+        # Creating output directory
+        try:
+            os.mkdir(self.input_loc)
+        except FileExistsError:
+            pass
+
         # Cleaning and preparing the PDB of the template
         # Getting the start and end AA number in the cleaned template structure
         self.input_pdb_loc = self.input_loc / f"{self.structure_name.upper()}.pdb"
         self.pdb_clean()
 
         # Writing of the PIR/ALI file
-        try:
-            os.mkdir(self.input_loc)
-        except FileExistsError:
-            pass
-
         self.input_ali_loc = self.input_loc / f"{self.target_name}.ali"
         self.ali_write()
 
