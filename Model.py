@@ -97,16 +97,11 @@ class Input:
         self.sequences = AlignIO.read(master_ali, "pir")
 
         # Extraction of information about chains
+        self.chains_ordered = []
         self.structure_chains = {}
         self.structure_chains_reference = {}
-        self.chains_extract()
-        # Order of chains, used in writing the alignments, to conserve the order
-        # used in the template structure file
-        self.chains_ordered = [ch.id for ch in self.structure.get_chains() if ch.id in self.structure_chains.keys()]
-
-        # Building the information about target chains in relation to template chains
         self.target_chains = {}
-        self.chains_build()
+        self.chain_preparation()
 
         # Creating output directory
         try:
@@ -123,46 +118,30 @@ class Input:
         self.input_ali_loc = self.input_loc / f"{self.target_name}.ali"
         self.ali_write()
 
-    def chains_extract(self):
+    def chain_preparation(self):
         """
-        Extracts the chain information (name, gaps and sequence) from the structure.
+        Extracts the  chains from the structure and builds the reference sequences.
+        Cleans the sequences where necessary (gaps in both sequences and extra AAs in
+        the beggining and end of the target sequence).
+        Inserts '/' where the chain brake is located.
         :return:
         """
-        builder = PDB.Polypeptide.CaPPBuilder()
-        chain_names = []
+        # Extracting the chain names from the structure header
+        chain_names = {}
         for compound in self.structure.header["compound"].values():
             if "gamma" in compound["molecule"]:
                 name = compound["molecule"].split(",")[0].split(" ")[-1].capitalize()
-                chain_names += [(chain, name) for chain in compound["chain"].upper().split(", ")]
+                for chain in compound["chain"].upper().split(", "):
+                    chain_names[chain] = name
 
-        for chain, sub_name in chain_names:
-            asequence = builder.build_peptides(self.structure[0][chain])
-            asequence = asequence[0].get_sequence()
+        # getting the order if the chains
+        self.chains_ordered = [ch.id for ch in self.structure.get_chains() if ch.id in chain_names.keys()]
 
-            ref_seq = [seq for seq in self.sequences if sub_name in seq.name][0]
-            alignment = pairwise2.align.globalds(asequence.ungap("-"),
-                                                 ref_seq.seq.ungap("-"),
-                                                 MatrixInfo.blosum62, -10, -0.5,
-                                                 one_alignment_only=True)
-            self.structure_chains[chain] = {"name": sub_name,
-                                            "gaps": [i for i, aa in enumerate(alignment[0][1]) if aa == "-"],
-                                            "sequence": alignment[0][0]}
-
-            self.structure_chains_reference[chain] = {"name": sub_name,
-                                                      "gaps": [i for i,
-                                                               aa in enumerate(alignment[0][1]) if aa == "-"],
-                                                      "sequence": alignment[0][0]}
-
-    def chains_build(self):
-        """
-        Building/preparing the target sequence chains.
-        :return: None
-        """
-        # Transforming the mapping of the input to the mapping in the template file
+        # Shifting the input mapping to achieve the correct substitutions
         input_mapping = [x[0] for x in self.target]
         input_mapping_target = [x[1] for x in self.target]
-        template = [self.structure_chains[chain]["name"] for chain in self.chains_ordered]
-        normal_orientation = [template] + [template[i:]+template[:i] for i in range(1, len(template))]
+        template = [chain_names[ch] for ch in self.chains_ordered]
+        normal_orientation = [template] + [template[i:] + template[:i] for i in range(1, len(template))]
         # Checking the orientation of the input
         if input_mapping not in normal_orientation:
             input_mapping = input_mapping[::-1]
@@ -172,65 +151,62 @@ class Input:
             input_mapping = input_mapping[1:] + input_mapping[:1]
             input_mapping_target = input_mapping_target[1:] + input_mapping_target[:1]
 
-        for target_subunit, chain in zip(input_mapping_target, self.chains_ordered):
-            data = self.structure_chains[chain]
-            self.structure_chains[chain]["sequence"], target_ali = self.align(data["sequence"],
-                                                                              f"{self.structure_name.upper()}",
-                                                                              target_subunit,
-                                                                              data["gaps"])
-            self.target_chains[chain] = {"name": target_subunit,
-                                         "sequence": target_ali}
+        # Fetching the sequences
+        # template_seq = {"subunit": Seq()}
+        template_seq = {seq.name.split("_")[0].split(".")[-1]: seq for
+                        seq in self.sequences if seq.name.startswith(self.structure_name.upper())}
+        target_seq = {seq.name: seq for seq in self.sequences if seq.name in input_mapping_target}
+        target_seq = {ch: target_seq[name] for ch, name in zip(self.chains_ordered, input_mapping_target)}
 
-    def align(self, seq1, seq1_name, seq2_name, breaks):
-        """
-        Aligns the sequences and creates the chain brakes at the appropriate places.
-        The flanking extra amino acids of seq2 are also removed.
-        :param seq1: First sequence (as string); this sequence is intended as a reference
-        from a structure
-        :param seq1_name: Name of the first sequence
-        :param seq2_name: Name of the second sequence
-        :param breaks: A list of indices of brakes, adjusted to the seq1
-        :return: Tuple of two sequences as strings
-        """
-        # Splitting the empty indices into coherent blocks and removing the first and
-        # last block - flanking regions.
-        break_blocks = [[breaks[0]]]
-        for index in breaks[1:]:
-            if index == break_blocks[-1][-1] + 1:
-                break_blocks[-1].append(index)
-            else:
-                break_blocks.append([index])
-        # Extracting the sequences of the blocks
-        break_sequences = [seq1[sequence[0]: sequence[-1] + 1] for sequence in break_blocks]
-        if breaks[0] == 0:
-            break_sequences = break_sequences[1:]
-        if seq1.endswith(break_sequences[-1]):
-            break_sequences = break_sequences[:-1]
+        # Modifying all the gaps
+        for ch in self.chains_ordered:
+            # Cleaning the extra gaps in both sequences
+            seq_1 = template_seq[ch]
+            seq_2 = target_seq[ch]
+            extra_i = [i for i, (aa1, aa2) in enumerate(zip(seq_1, seq_2)) if aa1 == "-" and aa2 == "-"]
+            for i in extra_i[::-1]:
+                seq_1 = seq_1[:i] + seq_1[i+1:]
+                seq_2 = seq_2[:i] + seq_2[i+1:]
 
-        # Getting the aligned sequences
-        seq1_out = str([x for x in self.sequences if
-                        (seq1_name in x.name and seq2_name[0].lower() == x.name[-2])][0].seq)
-        seq2_out = str([x for x in self.sequences if seq2_name in x.name][0].seq)
-        # Removing gaps present in both sequences
-        gaps = [i for i, (s1, s2) in enumerate(zip(seq1_out, seq2_out)) if s1 == s2 == "-"]
-        for gap in gaps[::-1]:
-            seq1_out = seq1_out[:gap] + seq1_out[gap + 1:]
-            seq2_out = seq2_out[:gap] + seq2_out[gap + 1:]
+            # Correct the beginning and ending of the sequence to the structure (the MasterAli.pir already has
+            # the correct AAs for the structures, which means we need to remove extra AAs on both sides of the
+            # target sequence only)
+            while seq_1[0] == "-" and seq_2[0] != "-":
+                seq_1 = seq_1[1:]
+                seq_2 = seq_2[1:]
+            while seq_1[-1] == "-" and seq_2[-1] != "-":
+                seq_1 = seq_1[:-1]
+                seq_2 = seq_2[:-1]
 
-        # Inserting "/" as a chain break sign at the end of the break blocks (this is why the chains
-        # are operated on in the reversed state.
-        seq1_out, seq2_out = seq1_out[::-1], seq2_out[::-1]
-        for break_sequence in break_sequences:
-            i = seq1_out.index(break_sequence[::-1])
-            seq1_out = seq1_out[:i] + "/" + seq1_out[i:]
-            seq2_out = seq2_out[:i] + "/" + seq2_out[i:]
-        # Removal of the flanking sequences, which are not present in the structure
-        while seq1_out.startswith("-"):
-            seq1_out, seq2_out = seq1_out[1:], seq2_out[1:]
-        while seq1_out.endswith("-"):
-            seq1_out, seq2_out = seq1_out[:-1], seq2_out[:-1]
+            # Getting the chain breaks from the structure
+            # The indices of gaps are the indices on which to break with python syntax (ie. Seq[:i] + "/" + Seq[i:])
+            gaps_temporary = []
+            for aa1, aa2, aa3, aa4, aa5 in zip(list(self.structure[0][ch].get_residues())[0:],
+                                               list(self.structure[0][ch].get_residues())[1:],
+                                               list(self.structure[0][ch].get_residues())[2:],
+                                               list(self.structure[0][ch].get_residues())[3:],
+                                               list(self.structure[0][ch].get_residues())[4:]):
+                # Check if there is a jump in residue numbering and if the next residue is an AA
+                # !! To implement: add the non-AA residues to the sequences and remove the AA checking !!
+                if aa1.id[1] != aa2.id[1]-1 and SeqUtils.seq1(aa2.get_resname()) != "X":
+                    # Find the index of the post-gap sequence
+                    i = seq_1.seq.find("".join([SeqUtils.seq1(aa.get_resname()) for aa in (aa2, aa3, aa4, aa5)]))
+                    # Shift the index back if there are multiple gaps on the place of
+                    while seq_1[i-1] == "-":
+                        i -= 1
+                    gaps_temporary.append(i)
+            # Inserting the gaps into the sequences (in reverse order to not change the index of the subsequent
+            # gap indices)
+            for i in gaps_temporary[::-1]:
+                seq_1 = seq_1[:i] + "/" + seq_1[i:]
+                seq_2 = seq_2[:i] + "/" + seq_2[i:]
 
-        return seq1_out[::-1], seq2_out[::-1]
+            self.structure_chains[ch] = {"name": input_mapping[self.chains_ordered.index(ch)],
+                                         "gaps": gaps_temporary,
+                                         "sequence": str(seq_1.seq)}
+
+            self.target_chains[ch] = {"name": input_mapping[self.chains_ordered.index(ch)],
+                                      "sequence": str(seq_2.seq)}
 
     def ali_write(self):
         """
@@ -239,7 +215,7 @@ class Input:
         structure/sequence:name:beginning_residue:beginning_chain:ending_residue:ending_chain:name:::
         :return: None
         """
-        # Sorted because the modeller reads it so.
+        # Ordered because the modeller reads it so.
         seq1_out = []
         seq2_out = []
         for chain in self.chains_ordered:
@@ -353,9 +329,7 @@ class Model:
                     del structure[0][chain.id]
 
             for chain in structure[0].get_chains():
-                # sequence_target = settings.target_chains[chain.id]["sequence"]
                 sequence_target = settings.target_chains[chain.id]["sequence"].replace("/", "")
-                # sequence_template = settings.structure_chains[chain.id]["sequence"]
                 sequence_template = settings.structure_chains[chain.id]["sequence"].replace("/", "")
                 chain_target = list(structure[0][chain.id].get_residues())
                 chain_template = list(settings.structure[0][chain.id].get_residues())
@@ -395,14 +369,14 @@ if __name__ == "__main__":
     # AA SEQUENCE*
     _pir_input = pathlib.Path(".") / "MasterAli.pir"
     _structure_loc = pathlib.Path(".") / "Structures"
-    _used_structure_name = "6a96"
+    _used_structure_name = "6hup"
     _used_structure_loc = _structure_loc / f"{_used_structure_name}.pdb"
-    _target_name = "a6b3"
-    _target = [("Alpha-5", "Alpha-6"),
+    _target_name = "a6b3g2"
+    _target = [("Alpha-1", "Alpha-6"),
                ("Beta-3", "Beta-3"),
+               ("Alpha-1", "Alpha-6"),
                ("Beta-3", "Beta-3"),
-               ("Beta-3", "Beta-3"),
-               ("Beta-3", "Beta-3")]
+               ("Gamma-2", "Gamma-2")]
 
     _model_input = Input(_structure_loc,
                          _target,
