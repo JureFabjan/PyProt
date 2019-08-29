@@ -4,8 +4,6 @@ import pathlib
 import Bio.AlignIO as AlignIO
 import Bio.PDB as PDB
 import Bio.SeqUtils as SeqUtils
-import Bio.SubsMat.MatrixInfo as MatrixInfo
-import Bio.pairwise2 as pairwise2
 import modeller
 import modeller.automodel as automodel
 
