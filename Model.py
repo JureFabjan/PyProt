@@ -176,6 +176,14 @@ class Input:
                 seq_1 = seq_1[:-1]
                 seq_2 = seq_2[:-1]
 
+            # Add extra periods to sequences for non-AA residues at the end of the chains in the structure
+            for res in [SeqUtils.seq1(r.get_resname()) for r in self.structure[0][ch].get_residues()][::-1]:
+                if res == "X":
+                    seq_1 += "."
+                    seq_2 += "."
+                else:
+                    break
+
             # Getting the chain breaks from the structure
             # The indices of gaps are the indices on which to break with python syntax (ie. Seq[:i] + "/" + Seq[i:])
             gaps_temporary = []
@@ -255,17 +263,7 @@ class Input:
 
         residues = {ch.id: list(ch.get_residues()) for ch in self.structure[0].get_list()
                     if ch.id in self.structure_chains.keys()}
-        accepted_res = []
-        for chain, sequence in residues.items():
-            while SeqUtils.seq1("".join(aa.get_resname() for
-                                        aa in sequence[:5])) != self.structure_chains[chain]["sequence"][:5]:
-                sequence = sequence[1:]
-            while SeqUtils.seq1("".join(aa.get_resname() for
-                                        aa in sequence[-5:])) != self.structure_chains[chain]["sequence"][-5:]:
-                sequence = sequence[:-1]
-            accepted_res = accepted_res + sequence
-            residues[chain] = sequence
-        selected.extend(accepted_res, "r")
+        selected.extend([res for ch in residues.values() for res in ch], "r")
 
         io.save(str(self.input_pdb_loc.absolute()), selected)
 
@@ -289,6 +287,12 @@ class Model:
         else:
             os.chdir(settings.input_loc)
         self.env.io.atom_files_directory = ["./"]
+
+        # Check if there are non-protein residues in the alignment and let modeller know he should consider them
+        for chain in settings.structure_chains.values():
+            if chain["sequence"].endswith("."):
+                self.env.io.hetatm = True
+                break
 
         self.alignment = modeller.automodel.automodel(self.env,
                                                       alnfile=settings.input_ali_loc.parts[-1],
@@ -337,19 +341,29 @@ class Model:
                 chain_target_dict = {}
                 for i, residue_target in enumerate(sequence_target):
                     if residue_target != "-":
-                        while SeqUtils.seq1(chain_target[j].get_resname()) != residue_target:
-                            j += 1
-                        chain_target[j].id = (" ", 10000+i, " ")
-                        chain_target_dict[10_000+i] = chain_target[j]
+                        if residue_target != ".":
+                            while SeqUtils.seq1(chain_target[j].get_resname()) != residue_target:
+                                j += 1
+                        else:
+                            # GABA is recognised as C! Other ligands (like N-glycans) are X
+                            while SeqUtils.seq1(chain_target[j].get_resname()) not in ("X", "C"):
+                                j += 1
+                        chain_target[j].id = (" ", 10_000+i, " ")
+                        chain_target_dict[i] = chain_target[j]
                         j += 1
 
                 # Introducing the numbering from the template
                 j = 0
                 for i, (residue_target, residue_template) in enumerate(zip(sequence_target, sequence_template)):
                     if residue_target != "-":
-                        while SeqUtils.seq1(chain_template[j].get_resname()) != residue_template:
-                            j += 1
-                        chain_target_dict[10_000+i].id = chain_template[j].id
+                        if residue_target != ".":
+                            while SeqUtils.seq1(chain_template[j].get_resname()) != residue_template:
+                                j += 1
+                        else:
+                            # GABA is recognised as C! Other ligands (like N-glycans) are X
+                            while SeqUtils.seq1(chain_template[j].get_resname()) not in ("X", "C"):
+                                j += 1
+                        chain_target_dict[i].id = chain_template[j].id
                         j += 1
 
             # Save back into the file
