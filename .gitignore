@@ -1,6 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 
 *.pir
+*.fasta
 !MasterAli.pir
 !MasterAli_old.pir
 Structures/Model

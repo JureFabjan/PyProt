@@ -331,40 +331,55 @@ class Model:
                     del structure[0][chain.id]
 
             for chain in structure[0].get_chains():
-                sequence_target = settings.target_chains[chain.id]["sequence"].replace("/", "")
-                sequence_template = settings.structure_chains[chain.id]["sequence"].replace("/", "")
+                # Fetch all resources needed for renumbering
                 chain_target = list(structure[0][chain.id].get_residues())
                 chain_template = list(settings.structure[0][chain.id].get_residues())
 
-                # Changing the numbering so to not introduce unwanted clashes in the assignment of the real numbers
-                j = 0
-                chain_target_dict = {}
-                for i, residue_target in enumerate(sequence_target):
-                    if residue_target != "-":
-                        if residue_target != ".":
-                            while SeqUtils.seq1(chain_target[j].get_resname()) != residue_target:
-                                j += 1
-                        else:
-                            # GABA is recognised as C! Other ligands (like N-glycans) are X
-                            while SeqUtils.seq1(chain_target[j].get_resname()) not in ("X", "C"):
-                                j += 1
-                        chain_target[j].id = (" ", 10_000+i, " ")
-                        chain_target_dict[i] = chain_target[j]
-                        j += 1
+                # Construct aligned lists of chain residues
+                chain_target_aligned = []
+                i = 0
+                for seq in settings.target_chains[chain.id]["sequence"].replace("/", ""):
+                    if seq == "-":
+                        chain_target_aligned.append(seq)
+                    else:
+                        chain_target_aligned.append(chain_target[i])
+                        i += 1
+                chain_template_aligned = []
+                i = 0
+                for seq in settings.structure_chains[chain.id]["sequence"].replace("/", ""):
+                    if seq == "-":
+                        chain_template_aligned.append(seq)
+                    else:
+                        chain_template_aligned.append(chain_template[i])
+                        i += 1
 
-                # Introducing the numbering from the template
-                j = 0
-                for i, (residue_target, residue_template) in enumerate(zip(sequence_target, sequence_template)):
-                    if residue_target != "-":
-                        if residue_target != ".":
-                            while SeqUtils.seq1(chain_template[j].get_resname()) != residue_template:
-                                j += 1
-                        else:
-                            # GABA is recognised as C! Other ligands (like N-glycans) are X
-                            while SeqUtils.seq1(chain_template[j].get_resname()) not in ("X", "C"):
-                                j += 1
-                        chain_target_dict[i].id = chain_template[j].id
-                        j += 1
+                # Change the numbering so tp not introduce unwanted clashes in the assignment of the real numbers
+                for residue in chain_target_aligned:
+                    if not type(residue) == str:
+                        # residue is not "-"; the number is increased by 10.000
+                        residue.id = (" ", 10_000+residue.id[1], " ")
+                # Introduce the correct numbering
+                for residue_template, residue_target in zip(chain_template_aligned, chain_target_aligned):
+                    if not (type(residue_target) == str or type(residue_template) == str):
+                        residue_target.id = residue_template.id
+                # Checking which AAs in the target don't have the correct numbering and renumber them
+                for i, residue in enumerate(chain_target_aligned):
+                    if not type(residue) == str:
+                        if residue.id[1] > 999:
+                            # Find the number before and after that is not high
+                            x = 1
+                            while type(chain_target_aligned[i-x]) == str or chain_target_aligned[i-x].id[1] > 999:
+                                x += 1
+                            y = 1
+                            while type(chain_target_aligned[i+y]) == str or chain_target_aligned[i+y].id[1] > 999:
+                                y += 1
+                            if chain_target_aligned[i-x].id[1] - chain_target_aligned[i+y].id[1] == 1:
+                                # Adding 10.000 to the number before  and adding x (distance in the alignment), to
+                                # avoid multiple consecutive AAs having the same number
+                                residue.id = (" ", chain_target_aligned[i-x].id[1]+10_000+x, " ")
+                            else:
+                                # Adding 1 to the previous AA
+                                residue.id = (" ", chain_target_aligned[i-x].id[1]+1, " ")
 
             # Save back into the file
             io = PDB.PDBIO()
@@ -381,13 +396,13 @@ if __name__ == "__main__":
     # AA SEQUENCE*
     _pir_input = pathlib.Path(".") / "MasterAli.pir"
     _structure_loc = pathlib.Path(".") / "Structures"
-    _used_structure_name = "6hup"
+    _used_structure_name = "6d6u"
     _used_structure_loc = _structure_loc / f"{_used_structure_name}.pdb"
-    _target_name = "a6b3g2"
+    _target_name = "a6b2g2"
     _target = [("Alpha-1", "Alpha-6"),
-               ("Beta-3", "Beta-3"),
+               ("Beta-2", "Beta-2"),
                ("Alpha-1", "Alpha-6"),
-               ("Beta-3", "Beta-3"),
+               ("Beta-2", "Beta-2"),
                ("Gamma-2", "Gamma-2")]
 
     _model_input = Input(_structure_loc,
