@@ -353,7 +353,7 @@ class Model:
                         chain_template_aligned.append(chain_template[i])
                         i += 1
 
-                # Change the numbering so tp not introduce unwanted clashes in the assignment of the real numbers
+                # Change the numbering so to not introduce unwanted clashes in the assignment of the real numbers
                 for residue in chain_target_aligned:
                     if not type(residue) == str:
                         # residue is not "-"; the number is increased by 10.000
@@ -371,15 +371,28 @@ class Model:
                             while type(chain_target_aligned[i-x]) == str or chain_target_aligned[i-x].id[1] > 999:
                                 x += 1
                             y = 1
-                            while type(chain_target_aligned[i+y]) == str or chain_target_aligned[i+y].id[1] > 999:
-                                y += 1
-                            if chain_target_aligned[i-x].id[1] - chain_target_aligned[i+y].id[1] == 1:
-                                # Adding 10.000 to the number before  and adding x (distance in the alignment), to
-                                # avoid multiple consecutive AAs having the same number
-                                residue.id = (" ", chain_target_aligned[i-x].id[1]+10_000+x, " ")
-                            else:
-                                # Adding 1 to the previous AA
+                            # Accounting for the AA being the last on the list
+                            try:
+                                chain_target_aligned[i+y]
+                            except IndexError:
+                                # There is no residue after the current one, so the number is just one higher than
+                                # the previous residues
                                 residue.id = (" ", chain_target_aligned[i-x].id[1]+1, " ")
+                            else:
+                                # There are AAs after the one being renumbered
+                                while type(chain_target_aligned[i+y]) == str or chain_target_aligned[i+y].id[1] > 999:
+                                    if i+y == len(chain_target_aligned)-1:
+                                        break
+                                    y += 1
+                                if chain_target_aligned[i-x].id[1] - chain_target_aligned[i+y].id[1] == 1:
+                                    # Adding 10.000 to the number before  and adding x (distance in the alignment), to
+                                    # avoid multiple consecutive AAs having the same number
+                                    residue.id = (" ", chain_target_aligned[i-x].id[1]+10_000+x, " ")
+                                else:
+                                    # Adding 1 to the previous AA
+                                    # Works if there is a gap in numbering in the template, or if at the end of
+                                    # the chain no AA has a number assigned
+                                    residue.id = (" ", chain_target_aligned[i-x].id[1]+1, " ")
 
             # Save back into the file
             io = PDB.PDBIO()
@@ -396,13 +409,13 @@ if __name__ == "__main__":
     # AA SEQUENCE*
     _pir_input = pathlib.Path(".") / "MasterAli.pir"
     _structure_loc = pathlib.Path(".") / "Structures"
-    _used_structure_name = "6d6u"
+    _used_structure_name = "6hup"
     _used_structure_loc = _structure_loc / f"{_used_structure_name}.pdb"
-    _target_name = "a6b2g2"
+    _target_name = "a6b2g2_6hup"
     _target = [("Alpha-1", "Alpha-6"),
-               ("Beta-2", "Beta-2"),
+               ("Beta-3", "Beta-3"),
                ("Alpha-1", "Alpha-6"),
-               ("Beta-2", "Beta-2"),
+               ("Beta-3", "Beta-3"),
                ("Gamma-2", "Gamma-2")]
 
     _model_input = Input(_structure_loc,
