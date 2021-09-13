@@ -54,7 +54,7 @@ class _Select(PDB.Select):
         """
         Overwritten method for returning the selection.
         :param residue: Residue to be checked.
-        :return: True if residue iis in the selected list, else False
+        :return: True if residue is in the selected list, else False
         """
         if residue in self.residues:
             return True
@@ -74,7 +74,17 @@ class Input:
         :param master_ali: Location of the MasterAli.pir file.
         """
         self.structure_loc = pathlib.Path(structure_loc)
-        self.input_loc = self.structure_loc / "Model"
+        # Setting a new directory as a location
+        i = 1
+        while os.path.exists(self.structure_loc / "Model_{}_{:0>2d}".format(target_name, i)):
+            i += 1
+        self.input_loc = self.structure_loc / "Model_{}_{:0>2d}".format(target_name, i)
+        # Creating output directory
+        try:
+            os.mkdir(self.input_loc)
+        except FileExistsError:
+            pass
+
         if structure_name:
             self.structure_name = structure_name
         else:
@@ -94,27 +104,14 @@ class Input:
                                                                              structure)
         self.sequences = AlignIO.read(master_ali, "pir")
 
+        self.input_pdb_loc = self.input_loc / f"{self.structure_name.upper()}.pdb"  # Where the cleaned input structure will be saved
+        self.input_ali_loc = self.input_loc / f"{self.target_name}.ali" # The path to the model-speciffic alignment
+
         # Extraction of information about chains
         self.chains_ordered = []
         self.structure_chains = {}
         self.structure_chains_reference = {}
         self.target_chains = {}
-        self.chain_preparation()
-
-        # Creating output directory
-        try:
-            os.mkdir(self.input_loc)
-        except FileExistsError:
-            pass
-
-        # Cleaning and preparing the PDB of the template
-        # Getting the start and end AA number in the cleaned template structure
-        self.input_pdb_loc = self.input_loc / f"{self.structure_name.upper()}.pdb"
-        self.pdb_clean()
-
-        # Writing of the PIR/ALI file
-        self.input_ali_loc = self.input_loc / f"{self.target_name}.ali"
-        self.ali_write()
 
     def chain_preparation(self):
         """
@@ -280,6 +277,7 @@ class Model:
         :param settings: Input object created for the input settings to the model.
         """
         self.env = modeller.environ()
+        self.settings = settings
 
         # Changing the working directory
         if settings.input_loc.is_file():
@@ -302,14 +300,27 @@ class Model:
         self.alignment.starting_model = starting_model
         self.alignment.ending_model = ending_model
 
+    def run_model(self):
+        """
+        Method that runs the modelling.
+        :param: None
+        :return: None
+        """
         self.alignment.make()
 
+    def chain_cleanup(self):
+        """
+        Cleans up the created models and saves the cleaned versions into the read files.
+        Cleaning up consists of renaming the chains the same way as in the template and renumbering the residues to the template numbers.
+        :param: None
+        :return: None
+        """
         # Rearranging and renaming of the chains
-        subchains_count = {ch: len(settings.target_chains[ch]["sequence"].split("/")) for ch in settings.chains_ordered}
-        self.created_files = [x for x in os.listdir(".") if x.startswith(settings.target_name) and x.endswith(".pdb")]
+        subchains_count = {ch: len(self.settings.target_chains[ch]["sequence"].split("/")) for ch in self.settings.chains_ordered}
+        self.created_files = [x for x in os.listdir(".") if x.startswith(self.settings.target_name) and x.endswith(".pdb")]
         for file in self.created_files:
             structure = PDB.PDBParser(PERMISSIVE=True,
-                                      QUIET=not _verbose).get_structure(settings.target_name,
+                                      QUIET=not _verbose).get_structure(self.settings.target_name,
                                                                         file)
             chains = list(structure[0].get_chains())
             # Rename all chains so they can be named correctly in the end
@@ -317,7 +328,7 @@ class Model:
                 chain.id = f"CHAIN{i}"
             # Extend the chains with the initial AAs with AAs from the same subunits
             i = 0
-            for chain in settings.chains_ordered:
+            for chain in self.settings.chains_ordered:
                 base = chains[i]
                 base.id = chain
                 i += 1
@@ -333,12 +344,12 @@ class Model:
             for chain in structure[0].get_chains():
                 # Fetch all resources needed for renumbering
                 chain_target = list(structure[0][chain.id].get_residues())
-                chain_template = list(settings.structure[0][chain.id].get_residues())
+                chain_template = list(self.settings.structure[0][chain.id].get_residues())
 
                 # Construct aligned lists of chain residues
                 chain_target_aligned = []
                 i = 0
-                for seq in settings.target_chains[chain.id]["sequence"].replace("/", ""):
+                for seq in self.settings.target_chains[chain.id]["sequence"].replace("/", ""):
                     if seq == "-":
                         chain_target_aligned.append(seq)
                     else:
@@ -346,7 +357,7 @@ class Model:
                         i += 1
                 chain_template_aligned = []
                 i = 0
-                for seq in settings.structure_chains[chain.id]["sequence"].replace("/", ""):
+                for seq in self.settings.structure_chains[chain.id]["sequence"].replace("/", ""):
                     if seq == "-":
                         chain_template_aligned.append(seq)
                     else:
@@ -423,4 +434,13 @@ if __name__ == "__main__":
                          _used_structure_name,
                          _target_name, _pir_input)
 
+    _model_input.chain_preparation()
+    # Cleaning and preparing the PDB of the template
+    # Getting the start and end AA number in the cleaned template structure
+    _model_input.pdb_clean()
+    # Writing of the PIR/ALI file
+    _model_input.ali_write()
+
     _model = Model(_model_input)
+    _model.run_model()
+    _model.chain_cleanup()
