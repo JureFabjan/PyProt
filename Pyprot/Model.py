@@ -435,11 +435,11 @@ if __name__ == "__main__":
                          _target_name, _pir_input)
 
     _model_input.chain_preparation()
+    # Writing of the PIR/ALI file
+    _model_input.ali_write()
     # Cleaning and preparing the PDB of the template
     # Getting the start and end AA number in the cleaned template structure
     _model_input.pdb_clean()
-    # Writing of the PIR/ALI file
-    _model_input.ali_write()
 
     _model = Model(_model_input)
     _model.run_model()
