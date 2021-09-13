@@ -51,7 +51,7 @@ def search(text, output_format="tab", sort="score", organism="", columns=(),
         return urlopen(fullcgi)
 
 
-def seq_download(name, organism="Homo sapiens", gaba=True):
+def seq_download(name, organism="Homo sapiens", gaba=False):
     """
     Downloads the sequence from UniProt. Returns Seq object or -1 if sequence not found.
     :param name: Name of the searched protein
