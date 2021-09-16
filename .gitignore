@@ -4,6 +4,7 @@
 *.fasta
 dist
 pyprot.egg-info
+*__pycache__
 !MasterAli.pir
 !MasterAli_old.pir
 Structures/Model

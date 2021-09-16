@@ -80,28 +80,40 @@ class Input:
             i += 1
         self.input_loc = self.structure_loc / "Model_{}_{:0>2d}".format(target_name, i)
         # Creating output directory
-        try:
-            os.mkdir(self.input_loc)
-        except FileExistsError:
-            pass
+        os.mkdir(self.input_loc)
+
+        # Testing if the structure_loc is a valid path
+        if not self.structure_loc.exists:
+            raise ValueError(f"{self.structure_loc} is not a valid value for structure_loc.")
 
         if structure_name:
+            # Structure name given
             self.structure_name = structure_name
+        elif self.structure_loc.parts[-1].endswith(".pdb"):
+            # Structure name part of the location
+            self.structure_name = self.structure_loc.name[:-4]
+            self.structure_loc = self.structure_loc.parent
         else:
-            self.structure_name = self.structure_loc.parts[-1]
+            # Trying to see if there is one .pdb file in the structure_loc path, else raising an error
+            pdb_list = [x for x in os.listdir(self.structure_loc) if x.endswith(".pdb")]
+            if len(pdb_list) == 1:
+                self.structure_name = pdb_list[0][:-4]
+            elif len(pdb_list) > 1:
+                raise FileNotFoundError(f"Structure name not provided and path {self.structure_loc} copntains multiple .pdb files.")
+            else:
+                raise FileNotFoundError(f"Structure name mot provided and cannot find any .pdb file in path {self.structure_loc}.")
+
         self.target = target_map
+        # Check if the target_map has a correct shape
+        if any(map(lambda x: len(x) != 2, self.target)):
+            raise ValueError(f"Incorrect shape of target_map: {self.target}")
         self.target_name = target_name
 
-        # Checking if the structure location points to the folder or the file itself
-        if self.structure_loc.is_file():
-            self.structure = PDB.PDBParser(PERMISSIVE=True,
-                                           QUIET=not _verbose).get_structure(self.structure_name,
-                                                                             self.structure_loc)
-        else:
-            structure = self.structure_loc / f"{self.structure_name}.pdb"
-            self.structure = PDB.PDBParser(PERMISSIVE=True,
-                                           QUIET=not _verbose).get_structure(self.structure_name,
-                                                                             structure)
+        self.structure = self._load_structure()
+
+        # Check if the master alignment is an existing path
+        if not os.path.exists(master_ali):
+            raise FileNotFoundError(f"Invalid master_ali value. There is no file {master_ali}.")
         self.sequences = AlignIO.read(master_ali, "pir")
 
         self.input_pdb_loc = self.input_loc / f"{self.structure_name.upper()}.pdb"  # Where the cleaned input structure will be saved
@@ -112,6 +124,31 @@ class Input:
         self.structure_chains = {}
         self.structure_chains_reference = {}
         self.target_chains = {}
+
+    def _load_structure(self):
+        """
+        Checks the validity of structure path. Then reads the structure and returns the object.
+        :param:
+        :return: Bio.PDB.PDBParser object containing the requested structure.
+        """
+        # Checking if the structure location + structure name is an existing file
+        structure_path = self.structure_loc / f"{self.structure_name}.pdb"
+        if not os.path.exists(structure_path):
+            raise FileNotFoundError(f"There is no file {self.structure_name} in {self.structure_loc}")
+
+        return PDB.PDBParser(PERMISSIVE=True,
+                             QUIET=not _verbose).get_structure(self.structure_name,
+                                                               structure_path)
+
+    def run(self):
+        """
+        Method running the preparation in a correct sequence
+        :param:
+        :return: None
+        """
+        self.chain_preparation()
+        self.pdb_clean()
+        self.ali_write()
 
     def chain_preparation(self):
         """
@@ -210,6 +247,28 @@ class Input:
 
             self.target_chains[ch] = {"name": input_mapping[self.chains_ordered.index(ch)],
                                       "sequence": str(seq_2.seq)}
+    
+    def pdb_clean(self):
+        """
+        Prepares the template pdb file for the modeling.
+        Removes the unnecessary chains and extra molecules and saves the structure.
+        :return: None
+        """
+        io = PDB.PDBIO()
+        io.set_structure(self.structure)
+        selected = _Select()
+        selected.extend([x for x in self.structure[0].get_list() if x.id in self.structure_chains.keys()], "c")
+
+        residues = {ch.id: list(ch.get_residues()) for ch in self.structure[0].get_list()
+                    if ch.id in self.structure_chains.keys()}
+        selected.extend([res for ch in residues.values() for res in ch], "r")
+
+        io.save(str(self.input_pdb_loc.absolute()), selected)
+
+        # Adding the beginning and ending AAs to the list
+        for chain in self.structure_chains.keys():
+            self.structure_chains[chain]["start"] = residues[chain][0].full_id[-1][1]
+            self.structure_chains[chain]["end"] = residues[chain][-1].full_id[-1][1]
 
     def ali_write(self):
         """
@@ -246,28 +305,6 @@ class Input:
                          "*"])
         with open(self.input_ali_loc, "w") as file:
             file.write(out)
-
-    def pdb_clean(self):
-        """
-        Prepares the template pdb file for the modeling.
-        Removes the unnecessary chains and extra molecules and saves the structure.
-        :return: None
-        """
-        io = PDB.PDBIO()
-        io.set_structure(self.structure)
-        selected = _Select()
-        selected.extend([x for x in self.structure[0].get_list() if x.id in self.structure_chains.keys()], "c")
-
-        residues = {ch.id: list(ch.get_residues()) for ch in self.structure[0].get_list()
-                    if ch.id in self.structure_chains.keys()}
-        selected.extend([res for ch in residues.values() for res in ch], "r")
-
-        io.save(str(self.input_pdb_loc.absolute()), selected)
-
-        # Adding the beginning and ending AAs to the list
-        for chain in self.structure_chains.keys():
-            self.structure_chains[chain]["start"] = residues[chain][0].full_id[-1][1]
-            self.structure_chains[chain]["end"] = residues[chain][-1].full_id[-1][1]
 
 
 class Model:
@@ -419,14 +456,13 @@ if __name__ == "__main__":
     # sequence:model_name
     # AA SEQUENCE*
     _pir_input = pathlib.Path(".") / "MasterAli.pir"
-    _structure_loc = pathlib.Path(".") / "Structures"
+    _structure_loc = pathlib.Path(r"C:\Users\Jure\Desktop\R6_substituted_pyrazoloquinolinones\Results\Computation\Modelling\a1b1g2")
     _used_structure_name = "6hup"
-    _used_structure_loc = _structure_loc / f"{_used_structure_name}.pdb"
-    _target_name = "a6b2g2_6hup"
-    _target = [("Alpha-1", "Alpha-6"),
-               ("Beta-3", "Beta-3"),
-               ("Alpha-1", "Alpha-6"),
-               ("Beta-3", "Beta-3"),
+    _target_name = "a1b1g2_6hup"
+    _target = [("Alpha-1", "Alpha-1"),
+               ("Beta-3", "Beta-1"),
+               ("Alpha-1", "Alpha-1"),
+               ("Beta-3", "Beta-1"),
                ("Gamma-2", "Gamma-2")]
 
     _model_input = Input(_structure_loc,
@@ -434,13 +470,8 @@ if __name__ == "__main__":
                          _used_structure_name,
                          _target_name, _pir_input)
 
-    _model_input.chain_preparation()
-    # Writing of the PIR/ALI file
-    _model_input.ali_write()
-    # Cleaning and preparing the PDB of the template
-    # Getting the start and end AA number in the cleaned template structure
-    _model_input.pdb_clean()
-
-    _model = Model(_model_input)
+    _model_input.run()
+    
+    _model = Model(_model_input, starting_model=1, ending_model=5)
     _model.run_model()
     _model.chain_cleanup()
